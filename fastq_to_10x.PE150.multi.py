@@ -141,7 +141,8 @@ class Fastq_transform:
         self.mismatch = 3
         self.min_length_seq = min_length_seq
         self.cutoffR1 = 75
-        self.cutoffR2 = 75
+        self.cutoffR2 = 60 ## keep 60bp of R2 from 3'
+        self.cell_bc_total_len = 75
         self.mychunksize = 5000000  #### read 5M lines per time and distribute them to multi cpus
         self.Processor = cpu
 
@@ -207,7 +208,6 @@ class Fastq_transform:
                 data_R2_chunk = list(islice(data_R2, 0, self.mychunksize, None))
                 pool.close()
                 pool.join()
-
                 for result in results:
                     result = result.get()
             #     print(result[0])
@@ -217,6 +217,9 @@ class Fastq_transform:
                     result[2]: R3 
                     """
                     #### write processed reads to different files with different threads
+                    if not result[0]:
+                        print("Error: No reads found after decoded")
+                        sys.exit(0)
                     x1 = Process(target=self.__write_to_file_R1_R3, args=(result[0],result[1],'R1',))
                     x2 = Process(target=self.__write_to_file_R2, args=(result[0],result[1],))
                     x3 = Process(target=self.__write_to_file_R1_R3, args=(result[2],result[1],'R3',))
@@ -273,7 +276,7 @@ class Fastq_transform:
         for R1_field,R2_field in zip(self.__readfq(f_R1),self.__readfq(f_R2)):
             R1_name,R1_seq,R1_qual = self._trimming(R1_field,reads ='R1')
             R2_name,R2_seq,R2_qual = self._trimming(R2_field,reads = 'R2')
-            sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3 = self.__R2_Demultiplexing(R2_field)      
+            sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3 = self.__R2_Demultiplexing(R2_field)    
             Total_reads += 1 
             if sample_index in self.sample_index_map and len(R1_seq) >= self.min_length_seq and len(R2_seq) >= self.min_length_seq and\
             (temp_cell_bc1,temp_cell_bc2,temp_cell_bc3) in self.all_sc_map_10x:
@@ -290,6 +293,7 @@ class Fastq_transform:
                     cell_number_order_dict[(sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3)] = 1
                 
                 ### keep the trimed and decoded reads in the list
+         
                 buffer_R1.append((R1_name+'\n',R1_seq,R1_qual))
                 buffer_R2.append((sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3))
                 buffer_R3.append((R2_name+'\n',R2_seq,R2_qual))
@@ -441,9 +445,8 @@ class Fastq_transform:
             seq = seq[0:self.cutoffR1]
             qual = qual[0:self.cutoffR1]
         else:
-            seq = seq[self.cutoffR2:]
-            qual = qual[self.cutoffR2:]
-
+            seq = seq[-self.cutoffR2:]
+            qual = qual[-self.cutoffR2:]
         for each_ap in self.adaptor_set: ### if the direction of adaptor is 5'->3'
          #   print(len(each_ap),len(self.adaptor),sep="\t")
             if len(each_ap) == len(self.adaptor): #if the adaptor exit in the sequence with full length, it can appear at anywhere
@@ -482,8 +485,8 @@ class Fastq_transform:
     def __R2_Demultiplexing(self,R2_field):
         """demultiplexing R2 with specific location of barcodes"""
         R2_name,R2_seq,R2_qual = R2_field
-        R2_seq = R2_seq[0:self.cutoffR2]
-        R2_qual = R2_qual[0:self.cutoffR2]
+        R2_seq = R2_seq[0:self.cell_bc_total_len]
+        R2_qual = R2_qual[0:self.cell_bc_total_len]
         R2_seq_part = R2_seq.partition(self.linker)
         if len(R2_seq_part) == 3:
             if len(R2_seq_part[2]) == 9:
