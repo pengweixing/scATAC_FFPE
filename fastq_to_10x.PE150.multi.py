@@ -6,12 +6,12 @@
 #################################################
 HELP = """ Example:
 ---------------------------------------------------------------------------
-R2 sequence with four structures: 5' -> 3'                                                      <--- R1         
+R2 sequence with four structures: 5' -> 3'                                                        <--- R1         
 cell_bc1              cell_bc2             cell_bc3    linker   sample_index                   
-ACGATTGNNNNNNNNNNNNNNNAAACCGGNNNNNNNNNNNNNNNACCCTAANNNNNNNNNNNNNNNAGANNNNNN   -> ME -> genomicDNA -> ME -> 
-ACGATTGNNNNNNNNNNNNNNNNAAACCGGNNNNNNNNNNNNNNNACCCTAANNNNNNNNNNNNNNNAGANNNNN   -> ME -> genomicDNA -> ME ->
-ACGATTGNNNNNNNNNNNNNNNNNAAACCGGNNNNNNNNNNNNNNNACCCTAANNNNNNNNNNNNNNNAGANNNN   -> ME -> genomicDNA -> ME ->
-ACGATTGNNNNNNNNNNNNNNNNNNAAACCGGNNNNNNNNNNNNNNNACCCTAANNNNNNNNNNNNNNNAGANNN   -> ME -> genomicDNA -> ME ->
+ACGATTGNNNNNNNNNNNNNNNAAACCGGNNNNNNNNNNNNNNNACCCTAANNNNNNNNNNNNNNNAGANNNNNN   -> ME -> genomicDNA -> ME-rev-com -> 
+ACGATTGNNNNNNNNNNNNNNNNAAACCGGNNNNNNNNNNNNNNNACCCTAANNNNNNNNNNNNNNNAGANNNNN   -> ME -> genomicDNA -> ME-rev-com ->
+ACGATTGNNNNNNNNNNNNNNNNNAAACCGGNNNNNNNNNNNNNNNACCCTAANNNNNNNNNNNNNNNAGANNNN   -> ME -> genomicDNA -> ME-rev-com ->
+ACGATTGNNNNNNNNNNNNNNNNNNAAACCGGNNNNNNNNNNNNNNNACCCTAANNNNNNNNNNNNNNNAGANNN   -> ME -> genomicDNA -> ME-rev-com ->
 ---------------------------------------------------------------------------
 linker ATCCACGAGCATTCG
 ---------------------------------------------------------------------------
@@ -89,13 +89,10 @@ import numpy as np
 import os
 import pandas as pd
 import math
-import random
 import time
-import pickle
 import Levenshtein
 from matplotlib import pyplot as plt
-from multiprocessing import Pool
-import threading
+from multiprocessing import Pool,Process
 from itertools import islice
 
 def fargv():
@@ -152,7 +149,8 @@ class Fastq_transform:
         adaptor_comp = self.DNA_complement(self.adaptor)
         adaptor_rev_comp = self.DNA_reverse(adaptor_comp)
         self.adaptor_set = self.__gen_adaptor(self.adaptor,rev=False)
-        self.adaptor_rev_comp_set = self.__gen_adaptor(adaptor_rev_comp,rev=True)
+        adaptor_rev_comp_set = self.__gen_adaptor(adaptor_rev_comp,rev=True)
+        self.adaptor_rev_comp_set = adaptor_rev_comp_set[::-1]
 
     def mkdir(self): 
         if not self.output_dir == "./":
@@ -185,9 +183,11 @@ class Fastq_transform:
         Total_reads = 0
         Barcode_reads_total_C =  Counter(Barcode_reads_total)
         cell_number_each_total_C =  Counter(cell_number_each_total)
+        data_R1_chunk = []
         while 1:
-            data_R1_chunk = list(islice(data_R1, 0, self.mychunksize, None))
-            data_R2_chunk = list(islice(data_R2, 0, self.mychunksize, None))
+            if not data_R1_chunk:
+                data_R1_chunk = list(islice(data_R1, 0, self.mychunksize, None))
+                data_R2_chunk = list(islice(data_R2, 0, self.mychunksize, None))
      
             if data_R1_chunk and len(data_R1_chunk)/4 > self.Processor:
                 pool = Pool(self.Processor)
@@ -201,7 +201,10 @@ class Fastq_transform:
                     data_R1_each_chunk = data_R1_chunk[start:end]
                     data_R2_each_chunk = data_R2_chunk[start:end]
                     results.append(pool.apply_async(process_R1_R2_wrapper,args = (self,data_R1_each_chunk,data_R2_each_chunk,)\
-                    ,error_callback=self.print_error))    
+                    ,error_callback=self.print_error))
+                """pre-read the data for next loop while the process is running """
+                data_R1_chunk = list(islice(data_R1, 0, self.mychunksize, None))
+                data_R2_chunk = list(islice(data_R2, 0, self.mychunksize, None))
                 pool.close()
                 pool.join()
 
@@ -214,11 +217,11 @@ class Fastq_transform:
                     result[2]: R3 
                     """
                     #### write processed reads to different files with different threads
-                    x1 = threading.Thread(target=self.__write_to_file_R1_R3, args=(result[0],result[1],'R1',))
-                    x2 = threading.Thread(target=self.__write_to_file_R2, args=(result[0],result[1],))
-                    x3 = threading.Thread(target=self.__write_to_file_R1_R3, args=(result[2],result[1],'R3',))
+                    x1 = Process(target=self.__write_to_file_R1_R3, args=(result[0],result[1],'R1',))
+                    x2 = Process(target=self.__write_to_file_R2, args=(result[0],result[1],))
+                    x3 = Process(target=self.__write_to_file_R1_R3, args=(result[2],result[1],'R3',))
                     x1.start(),x2.start(),x3.start()
-                    x1.join(),x2.join(),x3.join()        
+                    x1.join(),x2.join(),x3.join()      
                     ### merge all dicts of cell * fragments and reads number * sample 
                     Barcode_reads_each_C = Counter(result[3])
                     cell_number_each_C = Counter(result[4])
@@ -449,28 +452,31 @@ class Fastq_transform:
                     idx,dist = hold
                     seq = seq[idx+len(each_ap):]
                     qual = qual[idx+len(each_ap):]
+                    break
             else:  ## if the adaptor is not intact, then it should be at 5' of the seq
                 seq_5p = seq[0:len(each_ap)]
                 dist = Levenshtein.distance(seq_5p,each_ap)
                 if dist <= self.mismatch:
                     seq = seq[len(seq_5p)+1:] 
                     qual = qual[len(seq_5p)+1:] 
+                    break
         """if the direction of adaptor is 3'->5', which means the genomic DNA is too short, the another side of DNA adaptor also is sequenced"""
         for each_ap_rc in self.adaptor_rev_comp_set:  
-
+        
             if len(each_ap) == len(self.adaptor): #if the adaptor exit in the sequence with full length, it can appear at anywhere
                 hold = self.__fuzz_align(seq,each_ap)
                 if hold:
                     idx,dist = hold
                     seq = seq[:idx]
                     qual = qual[:idx]
+                    break
             else:  ## if the adaptor is not intact, then it should be at 3' of the reads
                 seq_5p = seq[-len(each_ap):]
                 dist = Levenshtein.distance(seq_5p,each_ap)
                 if dist <= self.mismatch:
                     seq = seq[0:-len(seq_5p)] 
                     qual = qual[0:-len(seq_5p)] 
-
+                    break
         return name,seq,qual
 
     def __R2_Demultiplexing(self,R2_field):
@@ -517,25 +523,27 @@ class Fastq_transform:
         while True: # mimic closure; is it a bad idea?
             if not last: # the first record or a record following a fastq              
                 for l in fp: # search for the start of the next record
-             #       l = l[0]
+                    l = l.rstrip()
                     if l[0] in '>@': # fasta/q header line
                         last = l # save this line, header line
                         break
             if not last: break
             name, seqs, last = last[1:], [], None
             for l in fp: # read the seq
+                l = l.rstrip()
           #      seq = l[0]
-                seq = l
+         #       seq = l
                 if l[0] in '@+>':
                     last = l
                     break
-                seq2 = seq
+                seq2 = l
             leng, seqs =  0, []
             for l in fp: # read the quality
+                l = l.rstrip()
            #     seqs = l[0]
-                seqs = l
+            #    seqs = l
                 last = None
-                yield name, seq2, seqs; # yield a fastq record
+                yield name, seq2, l; # yield a fastq record
                 break
 
     def process_barcode(self,barcode_name):
@@ -581,7 +589,6 @@ def main(kwargs):
     adaptor = args.adaptor
     cpu = args.processor
     
-
     debarcoding_obj = Fastq_transform(R1_input = R1_input, R2_input = R2_input,output_dir = output_dir, min_frags_cutoff_plot = min_frags_cutoff_plot,\
     max_frags_cutoff_plot = max_frags_cutoff_plot, bins=hist_bins, width = width,height=height, adaptor = adaptor,cpu = cpu )
     debarcoding_obj.mkdir()
@@ -591,7 +598,7 @@ def main(kwargs):
     debarcoding_obj.init_adaptors()
     debarcoding_obj.distribute_to_processor()
     debarcoding_obj.close_file()
-  #  
+    
 
 if __name__ == "__main__":
 
