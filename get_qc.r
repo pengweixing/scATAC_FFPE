@@ -9,32 +9,34 @@ library(ggplot2)
 library(scales)
 args <- commandArgs(T)
 brain <- read.csv(args[1])
+cutoff <- as.numeric(args[3])
+print(cutoff)
 brain$ifcell="No"
-brain$ifcell[which(brain$passed_filters>=500&brain$passed_filters<=100000)] = "Yes"
-data_cell = brain[which(brain$passed_filters>=500&brain$passed_filters<=100000),]
+brain$ifcell[which(brain$passed_filters>=cutoff&brain$passed_filters<=100000)] = "Yes"
+data_cell = brain[which(brain$passed_filters>=cutoff&brain$passed_filters<=100000),]
 total_raw = paste0("The total raw fragments:", prettyNum(sum(brain$total),big.mark = ","))
 total_mapped_value = sum(brain$total)-sum(brain$unmapped)
 total_mapped = paste0("The total mapped fragments:", prettyNum(total_mapped_value,big.mark = ","))
 total_passed = paste0("The total final fragments:", prettyNum(sum(brain$passed_filters),big.mark = ","))
-total_cells = length(which(brain$passed_filters>=500))
+total_cells = length(which(brain$passed_filters>=cutoff))
 total_cells2 = paste0("The total single cells:",total_cells)
 median_value = median(data_cell$passed_filters)
 median_frag = paste0("The median fragments of cell:",median_value)
 
 p <- ggplot(brain, aes(x=passed_filters,fill=ifcell)) + geom_histogram(binwidth=0.05,color='white')
 p <- p +   scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),
-              labels = trans_format("log10", math_format(10^.x)),limits = c(1,100000))
+              labels = trans_format("log10", math_format(10^.x)),limits = c(50,100000))
 p <- p + theme_bw()+xlab("Number of fragments")+ylab("Frequency")
-p <- p + geom_vline(xintercept = c(500,100000),linetype = 'longdash',colour="#03406A")
+p <- p + geom_vline(xintercept = c(cutoff,100000),linetype = 'longdash',colour="#03406A")
 p <- p + scale_fill_manual(values=c("#65A5D1","#03406A"))
 p <- p + theme(panel.grid = element_blank())+scale_y_continuous(expand=c(0.005,0))
-p <- p + annotate("text", x = 600, y = max(layer_data(p)$y)*0.7,
+p <- p + annotate("text", x = 5500, y = max(layer_data(p)$y)*0.5,
     label = paste0(total_raw,"\n",total_mapped,"\n",total_passed,"\n",total_cells2,"\n",median_frag), hjust='outward')
 filename1 <- paste0(args[2],"_fragments_barplot.pdf")
 pdf(file=filename1,width=8,height=6)
 p
 dev.off()
-dup_rate = data_cell$duplicate/(data_cell$total-data_cell$unmapped)
+dup_rate = data_cell$duplicate/data_cell$total
 pass_filter_frag = data_cell$passed_filters
 firp_value = data_cell$peak_region_fragments/data_cell$passed_filters
 data2 = as.data.frame(cbind(dup_rate,pass_filter_frag,firp_value))

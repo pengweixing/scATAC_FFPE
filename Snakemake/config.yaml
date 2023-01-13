@@ -1,0 +1,4 @@
+ref: /disk1/pengweixing/database/hg38/index/hg38.fa
+scripts:
+    markdup: /disk1/pengweixing/pipeline/scFFPE/Snakemake/MarkOptDup.py
+    python: /disk1/pengweixing/software/anaconda3/bin/python

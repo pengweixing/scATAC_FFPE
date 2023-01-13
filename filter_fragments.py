@@ -36,13 +36,18 @@ for line in f1:
 barcode_pass_filter = []
 print("the total barcodes number: %s " % len(all_frag.keys()))
 
-head = f2.readline()
+head = f2.readline().strip().split(',')
+j = 0
+for each in head:
+    if each == "passed_filters":
+        break
+    j+=1
 i = 0
 for line in f2:
     line = line.strip()
     line1 = line.split(',')
     barcode = line1[0]
-    pass_filter = int(line1[8])
+    pass_filter = int(line1[j])
     if pass_filter >= args.min_frag and pass_filter <= args.max_frag:
         barcode_pass_filter.append(barcode) 
         i+=1
@@ -55,4 +60,3 @@ for each_bar in barcode_pass_filter:
 all_line2 = pd.DataFrame(all_line)
 all_line2 = all_line2.sort_values([0, 1], ascending = (False, True))
 all_line2.to_csv(args.output,sep='\t',header=False,index=False)
-

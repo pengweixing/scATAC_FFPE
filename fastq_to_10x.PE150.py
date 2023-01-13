@@ -395,25 +395,37 @@ class Fastq_transform:
                 temp_cell_bc1 = R2_seq_part[0][self.pos[0][0]:self.pos[0][1]]
                 temp_cell_bc2 = R2_seq_part[0][self.pos[1][0]:self.pos[1][1]]
                 temp_cell_bc3 = R2_seq_part[0][self.pos[2][0]:self.pos[2][1]]
-                return sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3
+                if temp_cell_bc1 in self.bc1 and temp_cell_bc2 in self.bc2 and temp_cell_bc3 in self.bc3:
+                    return sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3
+                else:
+                    return None,None,None,None
             elif len(R2_seq_part[1]) == 8:
                 sample_index = R2_seq_part[1][0:3]
                 temp_cell_bc1 = R2_seq_part[0][self.pos[0][0]:self.pos[0][1]]
                 temp_cell_bc2 = R2_seq_part[0][self.pos[1][0]+1:self.pos[1][1]+1]
                 temp_cell_bc3 = R2_seq_part[0][self.pos[2][0]+1:self.pos[2][1]+1]
-                return sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3
+                if temp_cell_bc1 in self.bc1 and temp_cell_bc2 in self.bc2 and temp_cell_bc3 in self.bc3:
+                    return sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3
+                else:
+                    return None,None,None,None
             elif len(R2_seq_part[1]) == 7:
                 sample_index = R2_seq_part[1][0:3]
                 temp_cell_bc1 = R2_seq_part[0][self.pos[0][0]:self.pos[0][1]]
                 temp_cell_bc2 = R2_seq_part[0][self.pos[1][0]+2:self.pos[1][1]+2]
                 temp_cell_bc3 = R2_seq_part[0][self.pos[2][0]+2:self.pos[2][1]+2]
-                return sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3
+                if temp_cell_bc1 in self.bc1 and temp_cell_bc2 in self.bc2 and temp_cell_bc3 in self.bc3:
+                    return sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3
+                else:
+                    return None,None,None,None
             elif len(R2_seq_part[1]) == 6:
                 sample_index = R2_seq_part[1][0:3]
                 temp_cell_bc1 = R2_seq_part[0][self.pos[0][0]:self.pos[0][1]]
                 temp_cell_bc2 = R2_seq_part[0][self.pos[1][0]+3:self.pos[1][1]+3]
                 temp_cell_bc3 = R2_seq_part[0][self.pos[2][0]+3:self.pos[2][1]+3]
-                return sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3
+                if temp_cell_bc1 in self.bc1 and temp_cell_bc2 in self.bc2 and temp_cell_bc3 in self.bc3:
+                    return sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3
+                else:
+                    return None,None,None,None
             else:
                 pass
             return None,None,None,None

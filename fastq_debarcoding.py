@@ -6,12 +6,12 @@
 #################################################
 HELP = """ Example:
 ---------------------------------------------------------------------------
-R2 sequence with four structures: 5' -> 3'                                                        <--- R1         
+R2 sequence with four structures: 5' -> 3'                                                                      <--- R1         
 cell_bc1              cell_bc2             cell_bc3    linker   sample_index                   
-ACGATTGNNNNNNNNNNNNNNNAAACCGGNNNNNNNNNNNNNNNACCCTAANNNNNNNNNNNNNNNAGANNNNNN   -> ME -> genomicDNA -> ME-rev-com -> 
-ACGATTGNNNNNNNNNNNNNNNNAAACCGGNNNNNNNNNNNNNNNACCCTAANNNNNNNNNNNNNNNAGANNNNN   -> ME -> genomicDNA -> ME-rev-com ->
-ACGATTGNNNNNNNNNNNNNNNNNAAACCGGNNNNNNNNNNNNNNNACCCTAANNNNNNNNNNNNNNNAGANNNN   -> ME -> genomicDNA -> ME-rev-com ->
-ACGATTGNNNNNNNNNNNNNNNNNNAAACCGGNNNNNNNNNNNNNNNACCCTAANNNNNNNNNNNNNNNAGANNN   -> ME -> genomicDNA -> ME-rev-com ->
+ACGATTGNNNNNNNNNNNNNNNAAACCGGNNNNNNNNNNNNNNNACCCTAANNNNNNNNNNNNNNNAGANNNNNNNNNNNNNNNNNNN   -> ME -> genomicDNA -> ME-rev-com -> 
+ACGATTGNNNNNNNNNNNNNNNNAAACCGGNNNNNNNNNNNNNNNACCCTAANNNNNNNNNNNNNNNAGANNNNNNNNNNNNNNNNNNN   -> ME -> genomicDNA -> ME-rev-com ->
+ACGATTGNNNNNNNNNNNNNNNNNAAACCGGNNNNNNNNNNNNNNNACCCTAANNNNNNNNNNNNNNNAGANNNNNNNNNNNNNNNNNNN   -> ME -> genomicDNA -> ME-rev-com ->
+ACGATTGNNNNNNNNNNNNNNNNNNAAACCGGNNNNNNNNNNNNNNNACCCTAANNNNNNNNNNNNNNNAGANNNNNNNNNNNNNNNNNNN   -> ME -> genomicDNA -> ME-rev-com ->
 ---------------------------------------------------------------------------
 linker ATCCACGAGCATTCG
 ---------------------------------------------------------------------------
@@ -48,34 +48,6 @@ R04_#02 AAACGTC
 R04_#03 AAAGATG
 ...
 ---------------------------------------------------------------------------
-usage: python debarcode.py -r1 R1.fastq.gz -r2 R2.fastq.gz -b barcode.list -o output_name -d 737K-cratac-v1.txt
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -r1 R1, --R1 R1       the R1 of file
-  -r2 R2, --R2 R2       the R2 of file
-  -l POS_OF_R1, --pos_of_R1 POS_OF_R1
-                        the position of genomic DNA in R1, default is 95
-  -b BARCODE, --barcode BARCODE
-                        the barcode list
-  -d A10X_BARCODE, --a10x_barcode A10X_BARCODE
-                        the 10x barcode list
-  -o OUT_DIR, --out_dir OUT_DIR
-                        the directory for output
-  -fi MIN_FRAGS_CUTOFF_FOR_PLOT, --min_frags_cutoff_for_plot MIN_FRAGS_CUTOFF_FOR_PLOT
-                        the minimum number of frags for plot
-  -fa MAX_FRAGS_CUTOFF_FOR_PLOT, --max_frags_cutoff_for_plot MAX_FRAGS_CUTOFF_FOR_PLOT
-                        the maximum number of frags for plot
-  -bins HIST_BINS, --hist_bins HIST_BINS
-                        the number of bins for hist plot
-  -wt WIDTH, --width WIDTH
-                        the width of figure
-  -ht HEIGHT, --height HEIGHT
-                        the height of figure
-  -a ADAPTOR, --adaptor ADAPTOR
-                        the adaptor's sequence
-  -p PROCESSOR, --processor PROCESSOR
-                        the number of processors
 ---------------------------------------------------------------------------
 
 """
@@ -89,27 +61,23 @@ import numpy as np
 import os
 import pandas as pd
 import math
-import time
 import Levenshtein
+from fuzzywuzzy import fuzz
 from matplotlib import pyplot as plt
 from multiprocessing import Pool,Process
 import threading
 from itertools import islice
 
 def fargv():
-    parser = argparse.ArgumentParser(usage="python debarcode.py -r1 R1.fastq.gz -r2 R2.fastq.gz -b barcode.list -d 737K-cratac-v1.txt -o output_name")
+    parser = argparse.ArgumentParser(usage="python debarcode.py -r1 R1.fastq.gz -r2 R2.fastq.gz -b barcode.list -o output_name")
     parser.add_argument('-r1',"--R1",help="the R1 of file ", required=True)
     parser.add_argument('-r2',"--R2",help="the R2 of file ", required=True)
     parser.add_argument('-b',"--barcode",help="the barcode list ", required=True)
-    parser.add_argument('-d',"--a10x_barcode",help="the 10x barcode list ", required=True)
     parser.add_argument('-o',"--out_dir",help="the directory for output", default='./')
-    parser.add_argument('-fi',"--min_frags_cutoff_for_plot",help="the minimum number of frags for plot",default=2,type=int)
-    parser.add_argument('-fa',"--max_frags_cutoff_for_plot",help="the maximum number of frags for plot",default=100000,type=int)
-    parser.add_argument('-bins',"--hist_bins",help="the number of bins for hist plot",default=100,type=int)
-    parser.add_argument('-wt',"--width",help="the width of figure",default=10,type=int)
-    parser.add_argument('-ht',"--height",help="the height of figure",default=12,type=int)
-    parser.add_argument('-a',"--adaptor",help="the adaptor's sequence",type=str,default='AGATGTGTATAAGAGACAG')
+    parser.add_argument('-a',"--adaptor",help="the adaptor's sequence",type=str,default='GGAGAAGATGTGTATAAGAGACAG')
     parser.add_argument('-p',"--processor",help="the number of processors",default=10,type=int)
+    parser.add_argument('-ml',"--min_length_seq",help="the minimum length of R1 and R2 after trimming ",default=19,type=int)
+    
     args = parser.parse_args()
     return args
 
@@ -118,34 +86,31 @@ def process_R1_R2_wrapper(Fastq_transform,data_R1_each_chunk,data_R2_each_chunk)
 
 class Fastq_transform:
     names = locals()
-    def __init__(self,R1_input = [], R2_input = [],barcode_10x_file = [],output_dir = './', min_frags_cutoff_plot = 2,\
-    max_frags_cutoff_plot = 100000, bins=100, width = 10, height=12, adaptor = '',min_length_seq = 30,cpu = 10):
+    def __init__(self,R1_input = [], R2_input = [],output_dir = './', min_frags_cutoff_plot = 2,\
+     bins=100, adaptor = '',min_length_seq = 21,cpu = 10):
 
         self.R1_input = R1_input
         self.R2_input = R2_input
         self.pos = [(0,7),(22,29),(44,51)]
-        self.barcode_database = barcode_10x_file
         """linker sequence between sample index and cell BC1"""
         self.linker = "ATCCACGAGCATTCG"
+        self.me = "AGATGTGTATAAGAGACAG"
         self.sample_index_map,self.bc1,self.bc2,self.bc3 = {},[],[],[]
-        self.all_sc_map_10x = []
         self.output_dir = output_dir
-        self.min_frags_cutoff_plot = min_frags_cutoff_plot
-        self.max_frags_cutoff_plot = max_frags_cutoff_plot
-        self.plot_bins = bins
-        self.width = width
-        self.height = height
         self.adaptor = adaptor
-        self.threhold_for_Levenshtein = 0.8
+        self.threhold_for_Levenshtein = 80
         self.adaptor_set = []
         self.adaptor_rev_comp_set = []
         self.mismatch = 3
         self.min_length_seq = min_length_seq
         self.cutoffR1 = 75
-        self.cutoffR2 = 60 ## keep 60bp of R2 from 3'
-        self.cell_bc_total_len = 75
-        self.mychunksize = 1000000  #### read 5M lines per time and distribute them to multi cpus
+        self.cell_bc_total_len = 91
+        self.mychunksize = 5000000  #### read 5M lines per time and distribute them to multi cpus
         self.Processor = cpu
+        self.all_sc_barcodes = []
+        self.reads_number = 1
+        self.cutoffR2 = 59 ## keep 59bp of R2 from 3'
+        self.length_for_complete = 15
 
     def init_adaptors(self):
         adaptor_comp = self.DNA_complement(self.adaptor)
@@ -196,7 +161,7 @@ class Fastq_transform:
                 reads = self.mychunksize/4        ## The total number of reads
                 block = int(reads/self.Processor) ## The number of reads for each processor
                 results = []
-                ## split the total reads into different part and assign them to each cluster
+                ## split the total reads into different part and distribute them to each cpu
                 for index in range(self.Processor): 
                     start = index*block*4
                     end = (index+1)*block*4
@@ -207,7 +172,7 @@ class Fastq_transform:
                 """pre-read the data for next loop while the process is running """
                 data_R1_chunk = list(islice(data_R1, 0, self.mychunksize, None))
                 data_R2_chunk = list(islice(data_R2, 0, self.mychunksize, None))
-
+                                
                 pool.close()
                 pool.join()
                 for result in results:
@@ -220,11 +185,10 @@ class Fastq_transform:
                     #### write processed reads to different files with different threads
                     if not result[0]:
                         print("Warning: No reads found in this decoding loop")
-                    x1 = threading.Thread(target=self.__write_to_file_R1_R3, args=(result[0],result[1],'R1',))
-                    x2 = threading.Thread(target=self.__write_to_file_R2, args=(result[0],result[1],))
-                    x3 = threading.Thread(target=self.__write_to_file_R1_R3, args=(result[2],result[1],'R3',))
-                    x1.start(),x2.start(),x3.start()
-                    x1.join(),x2.join(),x3.join()      
+                    x1 = threading.Thread(target=self.__write_to_file_R1_R3, args=(result[0],result[1],'R1',))# R1 barcode
+                    x3 = threading.Thread(target=self.__write_to_file_R1_R3, args=(result[2],result[1],'R3',))# R2 barcode
+                    x1.start(),x3.start()
+                    x1.join(),x3.join()      
                     ### merge all dicts of cell * fragments and reads number * sample 
                     Barcode_reads_each_C = Counter(result[3])
                     cell_number_each_C = Counter(result[4])
@@ -265,8 +229,8 @@ class Fastq_transform:
     def process_R1_R2(self,data_R1_each_chunk,data_R2_each_chunk):
         
         buffer_R1 = []
-        buffer_R2 = []
         buffer_R3 = []
+        buffer_R2 = []
         Barcode_reads = {}
         cell_number_order_dict = {}
         f_R1 = iter(data_R1_each_chunk)
@@ -278,9 +242,10 @@ class Fastq_transform:
             R2_name,R2_seq,R2_qual = self._trimming(R2_field,reads = 'R2')
             sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3 = self.__R2_Demultiplexing(R2_field)    
             Total_reads += 1 
+                
 
-            if sample_index in self.sample_index_map and len(R1_seq) >= self.min_length_seq and len(R2_seq) >= self.min_length_seq and\
-            (temp_cell_bc1,temp_cell_bc2,temp_cell_bc3) in self.all_sc_map_10x:
+            if sample_index in self.sample_index_map and \
+            (temp_cell_bc1,temp_cell_bc2,temp_cell_bc3) in self.all_sc_barcodes:
                 ### count the reads which have correct barcodes
                 if sample_index in self.sample_index_map.keys():
                     if self.sample_index_map[sample_index] in Barcode_reads.keys():  
@@ -292,131 +257,67 @@ class Fastq_transform:
                     cell_number_order_dict[(sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3)] += 1
                 else:
                     cell_number_order_dict[(sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3)] = 1
-                
-                ### keep the trimed and decoded reads in the list
-                buffer_R1.append((R1_name+'\n',R1_seq,R1_qual))
-                buffer_R2.append((sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3))
-                buffer_R3.append((R2_name+'\n',R2_seq,R2_qual))
+                    
+                if len(R1_seq) >= self.min_length_seq and len(R2_seq) >= self.min_length_seq:
+                    ### keep the trimed and decoded reads in the list
+                    buffer_R1.append((R1_name+'\n',R1_seq,R1_qual))
+                    buffer_R2.append((sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3))
+                    buffer_R3.append((R2_name+'\n',R2_seq,R2_qual))
 
         return buffer_R1,buffer_R2,buffer_R3,Barcode_reads,cell_number_order_dict,Total_reads
-
-
-    def hist_plot(self,all_line = []):
-        data = pd.DataFrame(all_line)
-        data.columns = ["sample","bc1","bc2","bc3","number"]
-        data['number']=data['number'].astype(int)
-        data = data.loc[data['number'] >= self.min_frags_cutoff_plot]
-        data = data.loc[data['number'] <= self.max_frags_cutoff_plot]
-        all_sampels = set(list(data['sample']))
-        number = len(all_sampels)     
-        i = 0
-        j = 0
-        ###  create the index of the subplot within compound graph
-        comb = []
-        for ii in range(number):
-            if ii%2 == 0:
-                comb.append((i,0))
-            else:
-                comb.append((i,1))
-                i+=1
-        ii = 0 
-        fig, ax = plt.subplots(math.ceil(number/2),2,figsize=(self.width,self.height),frameon=False)   
-
-        for each in all_sampels:
-            each_data = pd.Series(data.loc[data['sample']==each]['number'])
-            ax[comb[ii][0],comb[ii][1]].hist(each_data,bins=self.plot_bins)
-            ax[comb[ii][0],comb[ii][1]].set_yscale("log")
-            ax[comb[ii][0],comb[ii][1]].set_xlabel("The number of fragments for each cell")
-            ax[comb[ii][0],comb[ii][1]].set_ylabel("The number of cells")
-            ax[comb[ii][0],comb[ii][1]].set_title(each)
-            ii += 1
-            plt.tight_layout()
-        fig.savefig(self.output_dir+"/Fragments_over_cells_distri.pdf",format='pdf',bbox_inches='tight')
-
-    def create_barcode_map(self,barcode_database):
-        """create map betwen our barcode list and 10x barcode list"""
-        all_barcode_list = [(temp_bc1,temp_bc2,temp_bc3) for temp_bc1 in self.bc1 for temp_bc2 in self.bc2 for temp_bc3 in self.bc3]
-        f_10x = open(barcode_database,'r')
-        all_10x_barcode = [line.strip() for line in f_10x.readlines()]
-        all_10x_barcode = all_10x_barcode[0:len(all_barcode_list)]
-        self.all_sc_map_10x = dict(zip(all_barcode_list,all_10x_barcode))
        
     def init_write(self):
         """initialize the output file"""
         for outname in self.sample_index_map.values():
         #    Fastq_transform.names['fI'+outname] = gzip.open(self.output_dir+"/"+outname+'_S1_L001_I1_001.fastq.gz','wb')  ### sample index
             Fastq_transform.names['f1'+outname] = gzip.open(self.output_dir+"/"+outname+'_S1_L001_R1_001.fastq.gz','wb')   ### Read 1 of genomic DNA
-            Fastq_transform.names['f2'+outname] = gzip.open(self.output_dir+"/"+outname+'_S1_L001_R2_001.fastq.gz','wb')   ### single cell barcode
-            Fastq_transform.names['f3'+outname] = gzip.open(self.output_dir+"/"+outname+'_S1_L001_R3_001.fastq.gz','wb')   ### Read 2 of genomic DNA
+            Fastq_transform.names['f3'+outname] = gzip.open(self.output_dir+"/"+outname+'_S1_L001_R2_001.fastq.gz','wb')   ### Read 2 of genomic DNA
             
     def close_file(self):
 
         for outname in self.sample_index_map.values():
          #   Fastq_transform.names['fI'+outname].close()
             Fastq_transform.names['f1'+outname].close()
-            Fastq_transform.names['f2'+outname].close()
             Fastq_transform.names['f3'+outname].close()
 
             print("the %s has been closed\n" % outname)
 
     def __write_to_file_R1_R3(self,buffer_R1_R3,buffer_R2,which_reads):
-        """ write the proccessed reads to fastq with 10x format"""
         for R1_record,R2_record in zip(buffer_R1_R3,buffer_R2):
             R1_name,R1_seq,R1_qual = R1_record
             sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3 = R2_record
             outname = ''
-            ten_x_barcode = ''
-            if sample_index in self.sample_index_map:  ## get the sample name from each sample index
-                outname = self.sample_index_map[sample_index] 
-            if R2_record[1:4] in self.all_sc_map_10x:   ## get the 10x barcode from each triple sc barcode
-                ten_x_barcode = self.all_sc_map_10x[R2_record[1:4]]
-            temp_for_write_I1 = {}
-            temp_for_write_R1 = {}
 
-            if outname and ten_x_barcode: 
-                if outname not in temp_for_write_I1.keys():
-                    temp_for_write_I1[outname]  = '@' + R1_name + 'AAAGCATA\n' + '+\n' + 'FFFFFFFF\n'
-                    temp_for_write_R1[outname]  = '@' + R1_name + R1_seq + '\n' + '+\n' + R1_qual + '\n'
+      #      if sample_index in self.sample_index_map:  ## get the sample name from each sample index
+            outname = self.sample_index_map[sample_index] 
+       #     if R2_record[1:4] in self.all_sc_map_10x:   ## get the 10x barcode from each triple sc barcode
+            barcode_name = R2_record[1]+R2_record[2]+R2_record[3]
+            R1_name = R1_name.strip().split()[0]
+            read_header_1 = "@" + barcode_name+"_" + '_'.join(R1_name.split(':')[3:]) + " 1:N:0"
+            read_header_2 = "@" + barcode_name+"_" + '_'.join(R1_name.split(':')[3:]) + " 2:N:0"
+      #      read_header_2 = "@" + barcode_name+"_"+n.zfill(str(self.reads_number))+" 2:N:0"
+            temp_for_write_R1 = {}
+            temp_for_write_R2 = {}
+            
+            if which_reads == "R1":
+                if outname not in temp_for_write_R1.keys():
+                    temp_for_write_R1[outname]  = read_header_1 +"\n"+ R1_seq + '\n' + '+\n' + R1_qual + '\n'
                 else:
-                    temp_for_write_I1[outname]  = temp_for_write_I1[outname] + '@' + R1_name + 'AAAGCATA\n' + '+\n' + 'FFFFFFFF\n'
-                    temp_for_write_R1[outname]  = temp_for_write_R1[outname] + '@' + R1_name + R1_seq + '\n' + '+\n' + R1_qual + '\n'
+                    temp_for_write_R1[outname]  = temp_for_write_R1[outname] + read_header_1 + "\n" + R1_seq + '\n' + '+\n' + R1_qual + '\n'
+            
+            elif which_reads == "R3":
+                if outname not in temp_for_write_R1.keys():
+                    temp_for_write_R1[outname]  = read_header_1 +"\n"+ R1_seq + '\n' + '+\n' + R1_qual + '\n'
+                else:
+                    temp_for_write_R1[outname]  = temp_for_write_R1[outname] + read_header_2 + "\n" + R1_seq + '\n' + '+\n' + R1_qual + '\n'
     
-            for outname in temp_for_write_I1.keys():        
+            for outname in temp_for_write_R1.keys():        
                 if which_reads == "R1":
                     Fastq_transform.names['f1'+outname].write(temp_for_write_R1[outname].encode())
                     Fastq_transform.names['f1'+outname].flush()
                 elif which_reads == "R3":
                     Fastq_transform.names['f3'+outname].write(temp_for_write_R1[outname].encode())
                     Fastq_transform.names['f3'+outname].flush()
-
-    def __write_to_file_R2(self,buffer_R1,buffer_R2):
-        """ write the proccessed reads to fastq with 10x format"""
-            
-        for R1_record,R2_record in zip(buffer_R1,buffer_R2):
-            R1_name,R1_seq,R1_qual = R1_record
-            sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3 = R2_record
-            outname = ''
-            ten_x_barcode = '' 
-            if sample_index in self.sample_index_map:  ## get the sample name from each sample index
-                outname = self.sample_index_map[sample_index] 
-            if R2_record[1:4] in self.all_sc_map_10x:
-               ## get the 10x barcode from each sc barcode
-                ten_x_barcode = self.all_sc_map_10x[R2_record[1:4]]
-            temp_for_write_I1 = {}
-            temp_for_write_R2 = {}
-
-            if outname and ten_x_barcode: 
-
-                if outname not in temp_for_write_I1.keys():
-                    temp_for_write_I1[outname]  = '@' + R1_name + 'AAAGCATA\n' + '+\n' + 'FFFFFFFF\n'
-                    temp_for_write_R2[outname]  = '@' + R1_name + ten_x_barcode + '\n' + '+\n' + 'FFFFFFFFFFFFFFFF\n'
-                else:
-                    temp_for_write_I1[outname]  = temp_for_write_I1[outname] + '@' + R1_name + 'AAAGCATA\n' + '+\n' + 'FFFFFFFF\n'
-                    temp_for_write_R2[outname]  = temp_for_write_R2[outname] + '@' + R1_name + ten_x_barcode + '\n' + '+\n' + 'FFFFFFFFFFFFFFFF\n'            
-          
-            for outname in temp_for_write_I1.keys():            
-                Fastq_transform.names['f2'+outname].write(temp_for_write_R2[outname].encode())
-                Fastq_transform.names['f2'+outname].flush()
                 
     ## split the adaptor into many sub-sequences, because the adaptor in the reads might not be intact            
     def __gen_adaptor(self,adaptor,rev=False):
@@ -447,49 +348,57 @@ class Fastq_transform:
                 if dist <= self.mismatch:  # find first then break
                     return idx,dist
                     break
-
+                
     def _trimming(self,seq_field,reads =''):
-      #  print(self.adaptor_set)
+
         name, seq, qual = seq_field
+        expand_for_overhang = 0
+        minimal_adaptor = 15
+        
         if reads == 'R1':
             seq = seq[0:self.cutoffR1]
             qual = qual[0:self.cutoffR1]
         else:
             seq = seq[-self.cutoffR2:]
             qual = qual[-self.cutoffR2:]
-        for each_ap in self.adaptor_set: ### if the direction of adaptor is 5'->3'
-         #   print(len(each_ap),len(self.adaptor),sep="\t")
-            if len(each_ap) == len(self.adaptor): #if the adaptor exit in the sequence with full length, it can appear at anywhere
-                hold = self.__fuzz_align(seq,each_ap)
-                if hold:
-                    idx,dist = hold
-                    seq = seq[idx+len(each_ap):]
-                    qual = qual[idx+len(each_ap):]
+
+        for each_subset in self.adaptor_set:
+            if len(each_subset) >= self.length_for_complete:
+                if fuzz.partial_ratio(each_subset,seq)>self.threhold_for_Levenshtein:
+                    hold = self.__fuzz_align(seq,each_subset)
+                    if hold:
+                        idx,dist = hold
+                        if dist<=self.mismatch:
+                            seq = seq[idx+len(each_subset):]
+                            qual = qual[idx+len(each_subset):]
+                            break
+            elif len(each_subset) < self.length_for_complete and len(each_subset)>minimal_adaptor:
+                line_front = seq[0:len(each_subset)+expand_for_overhang]
+                #dist = Levenshtein.distance(line_front, each_subset)
+                dist = fuzz.partial_ratio(each_subset,line_front)
+                dist = len(each_subset)*(1-dist)
+                if dist<=self.mismatch:
+                    seq = seq[len(each_subset)-1+expand_for_overhang:]
+                    qual = qual[len(each_subset)-1+expand_for_overhang:]
                     break
-            else:  ## if the adaptor is not intact, then it should be at 5' of the seq
-                seq_5p = seq[0:len(each_ap)]
-                dist = Levenshtein.distance(seq_5p,each_ap)
-                if dist <= self.mismatch:
-                    seq = seq[len(seq_5p)+1:] 
-                    qual = qual[len(seq_5p)+1:] 
-                    break
-        """if the direction of adaptor is 3'->5', which means the genomic DNA is too short, the another side of DNA adaptor also is sequenced"""
-        for each_ap_rc in self.adaptor_rev_comp_set:  
-        
-            if len(each_ap) == len(self.adaptor): #if the adaptor exit in the sequence with full length, it can appear at anywhere
-                hold = self.__fuzz_align(seq,each_ap)
-                if hold:
-                    idx,dist = hold
-                    seq = seq[:idx]
-                    qual = qual[:idx]
-                    break
-            else:  ## if the adaptor is not intact, then it should be at 3' of the reads
-                seq_5p = seq[-len(each_ap):]
-                dist = Levenshtein.distance(seq_5p,each_ap)
-                if dist <= self.mismatch:
-                    seq = seq[0:-len(seq_5p)] 
-                    qual = qual[0:-len(seq_5p)] 
-                    break
+        for each_subset in self.adaptor_rev_comp_set:
+            if len(each_subset) >= self.length_for_complete:
+                hold = self.__fuzz_align(seq,each_subset)
+                if fuzz.partial_ratio(each_subset,seq)>self.threhold_for_Levenshtein:
+                    if hold:
+                        idx,dist = hold
+                        if dist <= self.mismatch:
+                            seq = seq[0:idx]
+                            qual = qual[0:idx]
+                            break
+            elif len(each_subset) < self.length_for_complete and len(each_subset)>minimal_adaptor:
+                line_back = seq[-len(each_subset)-expand_for_overhang:]
+                #dist = Levenshtein.distance(line_back, each_subset)
+                dist = fuzz.partial_ratio(each_subset,line_front)
+                dist = len(each_subset)*(1-dist)
+                if dist<=self.mismatch:
+                    seq = seq[0:-len(each_subset)-expand_for_overhang]
+                    qual = qual[0:-len(each_subset)-expand_for_overhang]
         return name,seq,qual
 
     def __R2_Demultiplexing(self,R2_field):
@@ -498,40 +407,50 @@ class Fastq_transform:
         R2_seq = R2_seq[0:self.cell_bc_total_len]
         R2_qual = R2_qual[0:self.cell_bc_total_len]
         R2_seq_part = R2_seq.partition(self.linker)
+        
+        
         if len(R2_seq_part) == 3:
-            if len(R2_seq_part[2]) == 9:
+            if len(R2_seq_part[0]) == 51:
                 sample_index = R2_seq_part[2][0:3]
                 temp_cell_bc1 = R2_seq_part[0][self.pos[0][0]:self.pos[0][1]]
                 temp_cell_bc2 = R2_seq_part[0][self.pos[1][0]:self.pos[1][1]]
                 temp_cell_bc3 = R2_seq_part[0][self.pos[2][0]:self.pos[2][1]]
-                if temp_cell_bc1 in self.bc1 and temp_cell_bc2 in self.bc2 and temp_cell_bc3 in self.bc3 and sample_index in self.sample_index_map:
+                me = R2_seq_part[2][3:22]
+
+                if temp_cell_bc1 in self.bc1 and temp_cell_bc2 in self.bc2 and temp_cell_bc3 in self.bc3 and sample_index in self.sample_index_map and self.me == me:
                     return sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3
                 else:
                     return None,None,None,None
-            elif len(R2_seq_part[2]) == 8:
+            elif len(R2_seq_part[0]) == 52:
                 sample_index = R2_seq_part[2][0:3]
                 temp_cell_bc1 = R2_seq_part[0][self.pos[0][0]:self.pos[0][1]]
                 temp_cell_bc2 = R2_seq_part[0][self.pos[1][0]+1:self.pos[1][1]+1]
                 temp_cell_bc3 = R2_seq_part[0][self.pos[2][0]+1:self.pos[2][1]+1]
-                if temp_cell_bc1 in self.bc1 and temp_cell_bc2 in self.bc2 and temp_cell_bc3 in self.bc3 and sample_index in self.sample_index_map:
+                me = R2_seq_part[2][3:22]
+
+                if temp_cell_bc1 in self.bc1 and temp_cell_bc2 in self.bc2 and temp_cell_bc3 in self.bc3 and sample_index in self.sample_index_map and self.me == me:
                     return sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3
                 else:
                     return None,None,None,None
-            elif len(R2_seq_part[2]) == 7:
+            elif len(R2_seq_part[0]) == 53:
                 sample_index = R2_seq_part[2][0:3]
                 temp_cell_bc1 = R2_seq_part[0][self.pos[0][0]:self.pos[0][1]]
                 temp_cell_bc2 = R2_seq_part[0][self.pos[1][0]+2:self.pos[1][1]+2]
                 temp_cell_bc3 = R2_seq_part[0][self.pos[2][0]+2:self.pos[2][1]+2]
-                if temp_cell_bc1 in self.bc1 and temp_cell_bc2 in self.bc2 and temp_cell_bc3 in self.bc3 and sample_index in self.sample_index_map:
+                me = R2_seq_part[2][3:22]
+        
+                if temp_cell_bc1 in self.bc1 and temp_cell_bc2 in self.bc2 and temp_cell_bc3 in self.bc3 and sample_index in self.sample_index_map and self.me == me:
                     return sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3
                 else:
                     return None,None,None,None
-            elif len(R2_seq_part[2]) == 6:
+            elif len(R2_seq_part[0]) == 54:
                 sample_index = R2_seq_part[2][0:3]
                 temp_cell_bc1 = R2_seq_part[0][self.pos[0][0]:self.pos[0][1]]
                 temp_cell_bc2 = R2_seq_part[0][self.pos[1][0]+3:self.pos[1][1]+3]
                 temp_cell_bc3 = R2_seq_part[0][self.pos[2][0]+3:self.pos[2][1]+3]
-                if temp_cell_bc1 in self.bc1 and temp_cell_bc2 in self.bc2 and temp_cell_bc3 in self.bc3 and sample_index in self.sample_index_map:
+                me = R2_seq_part[2][3:22]
+      
+                if temp_cell_bc1 in self.bc1 and temp_cell_bc2 in self.bc2 and temp_cell_bc3 in self.bc3 and sample_index in self.sample_index_map and self.me == me:
                     return sample_index,temp_cell_bc1,temp_cell_bc2,temp_cell_bc3
                 else:
                     return None,None,None,None
@@ -556,8 +475,6 @@ class Fastq_transform:
             name, seqs, last = last[1:], [], None
             for l in fp: # read the seq
                 l = l.rstrip()
-          #      seq = l[0]
-         #       seq = l
                 if l[0] in '@+>':
                     last = l
                     break
@@ -565,12 +482,14 @@ class Fastq_transform:
             leng, seqs =  0, []
             for l in fp: # read the quality
                 l = l.rstrip()
-           #     seqs = l[0]
-            #    seqs = l
                 last = None
                 yield name, seq2, l; # yield a fastq record
                 break
-
+    def create_barcode_set(self):
+        """create map betwen our barcode list"""
+        all_barcode_list = [(temp_bc1,temp_bc2,temp_bc3) for temp_bc1 in self.bc1 for temp_bc2 in self.bc2 for temp_bc3 in self.bc3]
+        self.all_sc_barcodes = set(all_barcode_list)
+        
     def process_barcode(self,barcode_name):
         """get the barcode list from barcode file"""
         f_barcode = open(barcode_name,'r')
@@ -597,28 +516,27 @@ class Fastq_transform:
                 if all_barcode[i]:
                     temp_sample_bc = all_barcode[i].split()
                     self.bc3.append(temp_sample_bc[1])
-            
+                    
+        self.bc1 = set(self.bc1)
+        self.bc2 = set(self.bc2)
+        self.bc3 = set(self.bc3)
+        
 def main(kwargs):
 
     args = kwargs
     R1_input = args.R1
     R2_input = args.R2
     barcode_name = args.barcode
-    barcode_10x_file = args.a10x_barcode
     output_dir = args.out_dir
-    min_frags_cutoff_plot = args.min_frags_cutoff_for_plot
-    max_frags_cutoff_plot = args.max_frags_cutoff_for_plot
-    hist_bins = args.hist_bins
-    width = args.width
-    height = args.height
     adaptor = args.adaptor
     cpu = args.processor
+    min_length_seq = args.min_length_seq
     
-    debarcoding_obj = Fastq_transform(R1_input = R1_input, R2_input = R2_input,output_dir = output_dir, min_frags_cutoff_plot = min_frags_cutoff_plot,\
-    max_frags_cutoff_plot = max_frags_cutoff_plot, bins=hist_bins, width = width,height=height, adaptor = adaptor,cpu = cpu )
+    debarcoding_obj = Fastq_transform(R1_input = R1_input, R2_input = R2_input,output_dir = output_dir,
+   adaptor = adaptor,cpu = cpu ,min_length_seq = min_length_seq)
     debarcoding_obj.mkdir()
     debarcoding_obj.process_barcode(barcode_name)
-    debarcoding_obj.create_barcode_map(barcode_10x_file)
+    debarcoding_obj.create_barcode_set()
     debarcoding_obj.init_write()
     debarcoding_obj.init_adaptors()
     debarcoding_obj.distribute_to_processor()

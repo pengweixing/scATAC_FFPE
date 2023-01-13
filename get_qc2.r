@@ -8,34 +8,30 @@
 library(ggplot2)
 library(scales)
 args <- commandArgs(T)
-brain <- read.csv(args[1])
+data <- read.csv(args[1])
 number <- args[3]
 number = as.numeric(number)
-brain$ifcell="No"
-brain$ifcell[which(brain$passed_filters>=number&brain$passed_filters<=100000)] = "Yes"
-data_cell = brain[which(brain$passed_filters>=number&brain$passed_filters<=100000),]
-total_raw = paste0("The total raw fragments:", prettyNum(sum(brain$total),big.mark = ","))
-total_mapped_value = sum(brain$total)-sum(brain$unmapped)
+data$ifcell="No"
+data$ifcell[which(data$passed_filters>=number&data$passed_filters<=100000)] = "Yes"
+data_cell = data[which(data$passed_filters>=number&data$passed_filters<=100000),]
+total_raw = paste0("The total raw fragments:", prettyNum(sum(data$total),big.mark = ","))
+total_mapped_value = sum(data$total)-sum(data$unmapped)
 total_mapped = paste0("The total mapped fragments:", prettyNum(total_mapped_value,big.mark = ","))
-total_passed = paste0("The total final fragments:", prettyNum(sum(brain$passed_filters),big.mark = ","))
-total_cells = length(which(brain$passed_filters>=500))
+total_passed = paste0("The total final fragments:", prettyNum(sum(data$passed_filters),big.mark = ","))
+total_cells = length(which(data$passed_filters>=number))
 total_cells2 = paste0("The total single cells:",total_cells)
 median_value = median(data_cell$passed_filters)
 median_frag = paste0("The median fragments of cell:",median_value)
-brain2 = brain[brain$passed_filters>0,]
-p <- ggplot(brain2, aes(x=passed_filters,fill=ifcell)) + geom_histogram(color='white',binwidth = 0.05)
+data2 = data[data$passed_filters>0,]
+
+p <- ggplot(data2, aes(x=passed_filters,fill=ifcell)) + geom_histogram(color='white',binwidth = 0.05)
 p <- p +   scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),
               labels = trans_format("log10", math_format(10^.x)),limits = c(50,100000))
-     #          labels = trans_format("log10", math_format(10^.x)))                                            
-#p <- p +   scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
-#              labels = trans_format("log10", math_format(10^.x)))                         
 p <- p + theme_bw()+xlab("Number of fragments")+ylab("Frequency")
 p <- p + geom_vline(xintercept = c(number,100000),linetype = 'longdash',colour="#03406A")
 p <- p + scale_fill_manual(values=c("#65A5D1","#03406A"))
-#p <- p + theme(panel.grid = element_blank())+scale_y_continuous(expand=c(0.005,0))
 p <- p + annotate("text", x = number, y = max(na.omit(layer_data(p)$count))*0.7,
    label = paste0(total_raw,"\n",total_mapped,"\n",total_passed,"\n",total_cells2,"\n",median_frag), hjust=0)
-
 filename1 <- paste0(args[2],"_fragments_barplot.pdf")
 pdf(file=filename1,width=8,height=6)
 p

@@ -1,0 +1,26 @@
+ref: /disk1/pengweixing/database/hg38/index/hg38.fa
+scripts:
+    markdup: /disk1/pengweixing/pipeline/scFFPE/Snakemake/MarkOptDup.py
+    python: /disk1/pengweixing/software/anaconda3/bin/python
+    computeMatrix: /disk1/pengweixing/software/anaconda3/bin/computeMatrix
+    bamCoverage: /disk1/pengweixing/software/anaconda3/bin/bamCoverage
+    plotHeatmap: /disk1/pengweixing/software/anaconda3/bin/plotHeatmap
+    getscQC: /disk1/pengweixing/pipeline/scFFPE/Snakemake/get_singcell_qc.py
+    getscQC_single: /disk1/pengweixing/pipeline/scFFPE/Snakemake/get_singcell_qc_single.py
+    BamtoFrag: /disk1/pengweixing/pipeline/scFFPE/Snakemake/bamtofragments.py
+    Rscript: /disk1/pengweixing/software/anaconda3/bin/Rscript
+    plotqc: /disk1/pengweixing/pipeline/scFFPE/Snakemake/plot_qc.r
+    extractcell: /disk1/pengweixing/pipeline/scFFPE/Snakemake/extract_cell.py
+    cellpeak: /disk1/pengweixing/pipeline/scFFPE/Snakemake/Get_cell_matrix.py
+    getbulkqc: /disk1/pengweixing/pipeline/scFFPE/Snakemake/get_bulk_qc.py
+    plotProfile: /disk1/pengweixing/software/miniconda3/bin//plotProfile
+    sambamba: /disk1/pengweixing/software/sambamba/sambamba
+
+refanno: /disk1/pengweixing/database/hg38/gencode.v29.primary_assembly.annotation_UCSC_names.gtf
+gisze: hs
+tssbed: /disk1/pengweixing/database/hg38/hg38.tss.region
+blacklist: /disk1/pengweixing/database/hg38/hg38-blacklist.v2.bed
+quality: 2
+unique_frags: 500
+FRiP: 5
+FRiT: 7
